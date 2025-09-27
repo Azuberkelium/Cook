@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synchronized Kitchen Scheduler</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the timeline */
+        .timeline-container {
+            position: relative;
+        }
+
+        /* Responsive timeline positioning for desktop */
+        @media (min-width: 768px) {
+            .timeline-item-container {
+                padding-left: 3rem; /* Push content away from the line */
+            }
+        }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        .modal-content {
+            max-height: 80vh;
+        }
+
+        /* Group Color Styling (dynamic) */
+        .group-ring {
+            border-left-width: 6px;
+            border-left-style: solid;
+        }
+
+        /* Hide notification status when printing */
+        @media print {
+            .print-hide, 
+            .live-timer-panel,
+            #notificationStatus,
+            #app > section:first-child {
+                display: none !important;
+            }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen font-sans p-4 text-gray-800 dark:text-gray-100 transition-colors duration-300">
+
+    <div id="app" class="max-w-4xl mx-auto">
+        <header class="text-center py-6 print-hide">
+            <h1 class="text-4xl font-extrabold text-red-800 dark:text-red-500 tracking-tight">The Equalizer 🔔 Timer</h1>
+            <p class="mt-2 text-gray-600 dark:text-gray-400">Plan and execute your meal with real-time alarms.</p>
+        </header>
+
+        <!-- Configuration & Input Panel (print-hide) -->
+        <section class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-gray-200 dark:border-gray-700 print-hide">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">1. Set Ready Time & Task Details</h2>
+
+            <div class="md:flex md:space-x-4 mb-4">
+                <!-- Target Ready Time Input -->
+                <div class="flex-1 mb-4 md:mb-0">
+                    <label for="targetReadyTime" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Target Ready Time</label>
+                    <input type="time" id="targetReadyTime" required
+                        value="19:00" onchange="calculateAndRender(true)"
+                        class="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-red-500 focus:border-red-500 text-lg shadow-sm dark:bg-gray-700 dark:border-red-500 dark:text-white">
+                </div>
+                <!-- Prep Buffer Input -->
+                <div class="w-full md:w-40">
+                    <label for="prepBufferInput" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" title="Time (in minutes) required between sequential steps of the SAME dish (e.g., rest time between baking and carving).">Prep Buffer (mins)</label>
+                    <input type="number" id="prepBufferInput" required value="0" min="0" onchange="calculateAndRender(true)"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+            </div>
+
+            <!-- Task Input Form -->
+            <div id="addTaskForm" class="grid grid-cols-2 sm:grid-cols-6 gap-3 items-end">
+                
+                <!-- Group Name (Dish/Meal) -->
+                <div class="col-span-2 sm:col-span-2">
+                    <label for="taskGroupId" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Dish/Group Name (Required)</label>
+                    <input type="text" id="taskGroupId" placeholder="E.g., Roast Potatoes" required
+                        onchange="handleGroupChange(this.value)"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+                
+                <!-- Task Name / Step Description -->
+                <div class="col-span-2 sm:col-span-2">
+                    <label for="taskName" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Step Description</label>
+                    <input type="text" id="taskName" placeholder="E.g., Chop & Parboil or Bake"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required>
+                </div>
+                
+                <!-- Cooker/Location Dropdown -->
+                <div class="col-span-1 sm:col-span-1">
+                    <label for="taskCooker" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cooker/Area</label>
+                    <select id="taskCooker"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required>
+                        <option value="Oven" class="dark:bg-gray-700">Oven</option>
+                        <option value="Hob/Stove" class="dark:bg-gray-700">Hob/Stove</option>
+                        <option value="Air Fryer" class="dark:bg-gray-700">Air Fryer</option>
+                        <option value="Prep Area" selected class="dark:bg-gray-700">Prep Area</option>
+                        <option value="General/Other" class="dark:bg-gray-700">General/Other</option>
+                    </select>
+                </div>
+                
+                <!-- Duration -->
+                <div class="col-span-1 sm:col-span-1">
+                    <label for="taskDuration" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Duration (mins)</label>
+                    <input type="number" id="taskDuration" placeholder="E.g., 45" min="1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required>
+                </div>
+
+                <!-- Sequence Step -->
+                <div class="col-span-1 sm:col-span-1">
+                    <label for="taskSequenceStep" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" title="Lower numbers start earlier.">Sequence Step</label>
+                    <input type="number" id="taskSequenceStep" placeholder="E.g., 1" min="1" value="1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" required>
+                </div>
+                
+                <!-- SIMULTANEOUS CHECKBOX -->
+                <div class="col-span-1 sm:col-span-1 flex items-center pt-2 sm:pt-0">
+                    <input type="checkbox" id="taskSimultaneous" 
+                        class="h-5 w-5 text-fuchsia-600 border-gray-300 rounded focus:ring-fuchsia-500 mr-2 dark:bg-gray-700 dark:border-gray-600">
+                    <label for="taskSimultaneous" class="text-sm font-medium text-gray-700 dark:text-gray-300 select-none"
+                        title="If checked, the NEXT task added will default to the SAME Sequence Step.">Simultaneous?</label>
+                </div>
+
+                <!-- NOTES TEXTAREA -->
+                <div class="col-span-2 sm:col-span-2">
+                    <label for="taskNotes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes/Instructions (Optional)</label>
+                    <textarea id="taskNotes" placeholder="E.g., Add fresh rosemary, or Check internal temp 165°F" rows="1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-none"></textarea>
+                </div>
+                
+                <!-- Add Step Button -->
+                <div class="col-span-2 sm:col-span-2">
+                    <button onclick="addTask(true)"
+                        class="w-full py-2 px-4 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">
+                        Add Step
+                    </button>
+                </div>
+            </div>
+
+            <!-- Utility and View Controls -->
+            <div class="flex flex-wrap gap-3 mt-4 border-t pt-4 border-gray-100 dark:border-gray-700">
+                
+                <!-- START BUTTON -->
+                <button id="startButton" onclick="startSchedule()"
+                    class="w-full py-3 px-4 bg-red-600 text-white font-bold text-xl rounded-xl shadow-lg hover:bg-red-700 transition duration-150 transform hover:scale-[1.01] print-hide">
+                    START SCHEDULE 🚀
+                </button>
+
+                <!-- Notification Status -->
+                <p id="notificationStatus" class="w-full text-center text-sm font-medium italic text-gray-500 dark:text-gray-400 print-hide">
+                    Notifications: Pending Permission
+                </p>
+
+                <!-- VIEW CONTROLS -->
+                <div class="flex w-full space-x-2">
+                    <button onclick="toggleView('timeline')" id="viewTimelineBtn"
+                        class="flex-1 py-2 px-4 bg-blue-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150">
+                        Total Timeline
+                    </button>
+                    <button onclick="toggleView('area')" id="viewAreaBtn"
+                        class="flex-1 py-2 px-4 bg-blue-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">
+                        Cooker/Area View
+                    </button>
+                    <button onclick="toggleView('summary')" id="viewSummaryBtn"
+                        class="flex-1 py-2 px-4 bg-purple-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-purple-600 transition duration-150">
+                        🖨️ Print Summary
+                    </button>
+                </div>
+
+                <!-- Persistence & Templates -->
+                <div class="flex flex-wrap gap-3 w-full pt-2">
+                    <button onclick="addRoastTemplate()"
+                        class="flex-1 py-2 px-4 bg-red-400 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-red-500 transition duration-150">
+                        🍗 Roast Template
+                    </button>
+                    <button onclick="copyShareLink()"
+                        class="flex-1 py-2 px-4 bg-blue-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">
+                        🔗 Share
+                    </button>
+                    <button onclick="resetSchedule()"
+                        class="flex-1 py-2 px-4 bg-gray-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-gray-600 transition duration-150">
+                        🗑️ Reset
+                    </button>
+                </div>
+            </div>
+            
+        </section>
+
+        <!-- LIVE TIMER PANEL -->
+        <div id="liveTimerPanel" class="live-timer-panel bg-gray-900 text-white p-4 rounded-xl shadow-xl mb-8 flex flex-col md:flex-row justify-between items-stretch gap-4 print-hide transition duration-300 hidden">
+            
+            <!-- Overall Finish Countdown -->
+            <div class="flex-1 bg-gray-800 p-3 rounded-lg text-center border-b-4 border-red-500">
+                <p class="text-xs font-light text-gray-400">MEAL FINISH (Ready Time)</p>
+                <p class="text-3xl font-extrabold text-red-400" id="overallCountdown">--:--:--</p>
+            </div>
+            
+            <!-- Next Task Countdown -->
+            <div class="flex-1 bg-gray-800 p-3 rounded-lg text-center border-b-4 border-green-500">
+                <p class="text-xs font-light text-gray-400">NEXT ACTION DUE</p>
+                <p class="text-3xl font-extrabold text-green-400" id="nextStepCountdown">--:--:--</p>
+            </div>
+            
+            <!-- Next Task Info -->
+            <div id="nextTaskInfo" class="flex-1 bg-gray-800 p-3 rounded-lg text-left flex flex-col justify-center">
+                <p class="text-xs font-light text-gray-400">Next Task:</p>
+                <p class="text-lg font-bold truncate" id="nextTaskName">Loading...</p>
+                <p class="text-sm italic text-gray-500" id="nextTaskTime">--:--</p>
+            </div>
+        </div>
+
+        <!-- Timeline Display Area -->
+        <section class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+            <h2 class="text-2xl font-semibold mb-6 text-gray-700 dark:text-gray-200 print-text-black">2. Schedule View (<span id="currentViewTitle">Total Timeline</span>)</h2>
+            
+            <div id="timelineOutput" class="timeline-container pb-8 md:p-4">
+                <p id="emptyMessage" class="text-center text-gray-500 dark:text-gray-400 italic">Add tasks above to see your synchronized cooking schedule!</p>
+                <!-- Timeline content will be rendered here -->
+            </div>
+        </section>
+    </div>
+
+    <!-- Dish Summary Modal -->
+    <div id="dishesModal" class="fixed inset-0 z-50 hidden items-center justify-center modal-overlay print-hide">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl w-full max-w-lg modal-content overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Dishes Summary</h3>
+                <button onclick="closeDishesModal()" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="dishesContent" class="space-y-4">
+                <!-- Content will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state for tasks
+        let schedule = {
+            targetReadyTime: null,
+            tasks: []
+        };
+        
+        let currentView = 'timeline'; 
+        let feedbackTimeout;
+        let timerInterval;
+        let SCHEDULE_STATE = 'IDLE'; // 'IDLE', 'RUNNING', 'FINISHED'
+        let notificationHistory = new Set(); // To prevent duplicate alerts
+
+        const STORAGE_KEY = 'equalizerKitchenScheduleV2';
+        const DARK_MODE_KEY = 'darkModePreference';
+
+        // --- Utility Functions ---
+
+        /**
+         * Converts milliseconds to HH:MM:SS string.
+         */
+        function msToHms(ms) {
+            if (ms <= 0) return '00:00:00';
+            let seconds = Math.floor(ms / 1000);
+            const hours = Math.floor(seconds / 3600);
+            seconds -= hours * 3600;
+            const minutes = Math.floor(seconds / 60);
+            seconds -= minutes * 60;
+
+            const pad = (num) => String(num).padStart(2, '0');
+            return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+        }
+
+        /**
+         * Formats a Date object to HH:MM AM/PM string.
+         */
+        function formatTime(date) {
+            if (!date || isNaN(date.getTime())) return 'N/A';
+            return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        }
+        
+        // --- Color Hashing for Group IDs ---
+
+        /**
+         * Generates a stable color hex string from a group ID.
+         */
+        function getColorHash(str) {
+            let hash = 0;
+            if (str.length === 0) return "808080";
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                hash = hash & hash; 
+            }
+            let color = (hash & 0x00FFFFFF)
+                .toString(16)
+                .toUpperCase();
+            return "00000".substring(0, 6 - color.length) + color;
+        }
+
+        /**
+         * Returns Tailwind CSS classes for background and text based on the cooker name.
+         */
+        function getCookerColor(cooker) {
+            const normalizedCooker = cooker.toLowerCase().trim();
+            
+            if (normalizedCooker.includes('air fryer')) return { bg: 'bg-yellow-100 dark:bg-yellow-900', text: 'text-yellow-800 dark:text-yellow-200' };
+            if (normalizedCooker.includes('pressure cooker')) return { bg: 'bg-cyan-100 dark:bg-cyan-900', text: 'text-cyan-800 dark:text-cyan-200' };
+            if (normalizedCooker.includes('oven')) return { bg: 'bg-amber-100 dark:bg-amber-900', text: 'text-amber-800 dark:text-amber-200' };
+            if (normalizedCooker.includes('prep area')) return { bg: 'bg-lime-100 dark:bg-lime-900', text: 'text-lime-800 dark:text-lime-200' };
+            if (normalizedCooker.includes('hob') || normalizedCooker.includes('stove')) return { bg: 'bg-red-100 dark:bg-red-900', text: 'text-red-800 dark:text-red-200' };
+            if (normalizedCooker.includes('grill') || normalizedCooker.includes('broiler')) return { bg: 'bg-pink-100 dark:bg-pink-900', text: 'text-pink-800 dark:text-pink-200' };
+            
+            return { bg: 'bg-blue-100 dark:bg-blue-900', text: 'text-blue-800 dark:text-blue-200' };
+        }
+
+        // --- Core Logic: Task Management and Calculation ---
+
+        function handleGroupChange(groupId) {
+            const sequenceStepInput = document.getElementById('taskSequenceStep');
+            const trimmedGroupId = groupId.trim();
+
+            if (!trimmedGroupId) {
+                sequenceStepInput.value = 1;
+                return;
+            }
+
+            // Find the maximum step number for the selected group
+            const tasksInGroup = schedule.tasks.filter(t => t.groupId === trimmedGroupId);
+            const maxStep = tasksInGroup.length > 0 ? Math.max(...tasksInGroup.map(t => t.step)) : 0;
+            
+            sequenceStepInput.value = maxStep + 1;
+        }
+
+        function addTask(shouldSave = false) {
+            const nameInput = document.getElementById('taskName');
+            const durationInput = document.getElementById('taskDuration');
+            const cookerSelect = document.getElementById('taskCooker'); 
+            const groupIdInput = document.getElementById('taskGroupId');
+            const sequenceStepInput = document.getElementById('taskSequenceStep');
+            const simultaneousCheckbox = document.getElementById('taskSimultaneous');
+            const notesInput = document.getElementById('taskNotes'); 
+
+            const name = nameInput.value.trim();
+            const duration = parseInt(durationInput.value, 10);
+            const cooker = cookerSelect.value.trim() || 'General/Other';
+            
+            const groupId = groupIdInput.value.trim() || null;
+            const step = parseInt(sequenceStepInput.value, 10);
+            const notes = notesInput.value.trim(); 
+            const isSimultaneous = simultaneousCheckbox.checked; 
+            
+            // Validation
+            if (!name || duration <= 0 || !groupId || step <= 0) {
+                showFeedback("❌ Please fill out all required fields (Name, Duration > 0, Group Name, Sequence Step > 0).", 'bg-red-500');
+                return;
+            }
+
+            // Add the task
+            schedule.tasks.push({
+                id: Date.now() + Math.random(),
+                name: name,
+                durationInMinutes: duration,
+                cooker: cooker,
+                groupId: groupId, 
+                step: step, 
+                notes: notes, 
+                startTime: null
+            });
+
+            // --- UX Enhancement: Auto-increment/Stay for Next Task ---
+            sequenceStepInput.value = isSimultaneous ? step : step + 1;
+            
+            // Clear inputs for next step
+            nameInput.value = '';
+            durationInput.value = '';
+            notesInput.value = ''; 
+            simultaneousCheckbox.checked = false; 
+            
+            calculateAndRender(shouldSave);
+            nameInput.focus();
+        }
+
+        /**
+         * Calculates the start time for all tasks, handling sequencing and Prep Buffer.
+         */
+        function calculateAndRender(shouldSave = false) {
+            const targetTimeInput = document.getElementById('targetReadyTime').value;
+            const globalPrepBufferMinutes = parseInt(document.getElementById('prepBufferInput').value, 10) || 0;
+            const globalPrepBufferMs = globalPrepBufferMinutes * 60 * 1000;
+
+            if (!targetTimeInput) {
+                renderTimelineView(currentView);
+                generateShareLink();
+                return;
+            }
+
+            const [hours, minutes] = targetTimeInput.split(':').map(Number);
+            const targetDate = new Date();
+            targetDate.setHours(hours, minutes, 0, 0);
+
+            schedule.targetReadyTime = targetDate;
+            
+            const groupedTasks = schedule.tasks.reduce((acc, task) => {
+                const groupId = task.groupId ? task.groupId.trim() : null;
+                if (groupId) {
+                    if (!acc[groupId]) acc[groupId] = [];
+                    acc[groupId].push(task);
+                }
+                return acc;
+            }, {});
+
+            for (const groupId in groupedTasks) {
+                let sequence = groupedTasks[groupId];
+                const stepNumbers = [...new Set(sequence.map(t => t.step))].sort((a, b) => a - b);
+
+                let nextTaskStartTime = targetDate.getTime();
+                
+                for (let i = stepNumbers.length - 1; i >= 0; i--) { 
+                    const currentStep = stepNumbers[i];
+                    const stepTasks = sequence.filter(t => t.step === currentStep);
+
+                    // 1. Determine the end time of the current step (which is the start time of the next step/ready time)
+                    let stepEndTime = nextTaskStartTime;
+                    
+                    // 2. APPLY PREP BUFFER: If this isn't the final step, subtract the buffer time.
+                    if (i < stepNumbers.length - 1) {
+                        stepEndTime -= globalPrepBufferMs;
+                    }
+                    
+                    // 3. Find max duration for simultaneous tasks in this step
+                    const maxDurationInStep = stepTasks.reduce((max, task) => Math.max(max, task.durationInMinutes), 0);
+                    const maxDurationMs = maxDurationInStep * 60 * 1000;
+                    
+                    // 4. Calculate the start time
+                    const stepStartTime = stepEndTime - maxDurationMs;
+                    
+                    // 5. Assign start time to all tasks in this step
+                    stepTasks.forEach(task => {
+                        task.startTime = new Date(stepStartTime);
+                    });
+                    
+                    // Set nextTaskStartTime for the next iteration (previous step)
+                    nextTaskStartTime = stepStartTime;
+                }
+            }
+
+            updateLiveTimer();
+            renderTimelineView(currentView);
+            generateShareLink();
+            if (shouldSave) saveSchedule();
+        }
+
+        // --- Live Timer & Alarm Logic ---
+
+        function updateLiveTimer() {
+            const now = new Date();
+            const panel = document.getElementById('liveTimerPanel');
+            const startButton = document.getElementById('startButton');
+
+            // --- Overall Finish Countdown ---
+            const overallTimeDiff = schedule.targetReadyTime ? schedule.targetReadyTime.getTime() - now.getTime() : 0;
+            document.getElementById('overallCountdown').textContent = msToHms(overallTimeDiff);
+
+            if (schedule.tasks.length === 0 || SCHEDULE_STATE === 'IDLE') {
+                panel.classList.add('hidden');
+                startButton.classList.remove('hidden');
+                return;
+            }
+
+            panel.classList.remove('hidden');
+            startButton.classList.add('hidden');
+            
+            // --- Next Step Countdown ---
+            const upcomingTasks = [...schedule.tasks]
+                .filter(t => t.startTime && t.startTime.getTime() > now.getTime())
+                .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+            const nextTaskNameEl = document.getElementById('nextTaskName');
+            const nextTaskTimeEl = document.getElementById('nextTaskTime');
+            const nextStepCountdownEl = document.getElementById('nextStepCountdown');
+            
+            if (upcomingTasks.length > 0) {
+                const nextTask = upcomingTasks[0];
+                const timeDiff = nextTask.startTime.getTime() - now.getTime();
+                const taskId = nextTask.id;
+
+                nextStepCountdownEl.textContent = msToHms(timeDiff);
+                nextTaskNameEl.textContent = `${nextTask.name} (${nextTask.cooker})`;
+                nextTaskTimeEl.textContent = `Starts at ${formatTime(nextTask.startTime)}`;
+                
+                // --- ALARM CHECK ---
+                if (timeDiff <= 60000 && !notificationHistory.has(taskId)) { // Less than 1 minute to start
+                    sendNotification(nextTask);
+                    notificationHistory.add(taskId); 
+                }
+                
+            } else {
+                // All tasks started or finished
+                SCHEDULE_STATE = 'FINISHED';
+                clearInterval(timerInterval);
+                nextStepCountdownEl.textContent = '00:00:00';
+                nextTaskNameEl.textContent = 'All steps complete!';
+                nextTaskTimeEl.textContent = 'Meal is ready!';
+                startButton.classList.remove('hidden');
+                startButton.textContent = 'SCHEDULE FINISHED 🎉';
+            }
+            
+            // Re-render timeline to update "Next Task" indicator
+            renderTimelineView(currentView);
+        }
+        
+        function startSchedule() {
+            if (SCHEDULE_STATE === 'RUNNING') {
+                // Already running
+                showFeedback("Scheduler is already RUNNING.", 'bg-yellow-500');
+                return;
+            }
+            if (schedule.tasks.length === 0) {
+                showFeedback("❌ Cannot start. Please add tasks first.", 'bg-red-500');
+                return;
+            }
+            
+            requestNotificationPermission();
+            
+            SCHEDULE_STATE = 'RUNNING';
+            notificationHistory.clear();
+            startLiveTimer();
+            showFeedback("✅ Schedule started! Alarms are armed.", 'bg-red-600');
+            document.getElementById('startButton').textContent = 'SCHEDULE IS RUNNING...';
+            document.getElementById('startButton').classList.replace('bg-red-600', 'bg-green-600');
+            document.getElementById('startButton').classList.add('animate-pulse');
+        }
+
+        function startLiveTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateLiveTimer, 1000);
+            updateLiveTimer(); // Initial call
+        }
+
+        // --- Notification Handling ---
+
+        function requestNotificationPermission() {
+            const statusEl = document.getElementById('notificationStatus');
+            if (!("Notification" in window)) {
+                statusEl.textContent = "Notifications: Browser not supported.";
+                statusEl.classList.replace('text-gray-500', 'text-red-500');
+                return;
+            }
+
+            if (Notification.permission === "granted") {
+                statusEl.textContent = "Notifications: Active (Alarms are armed)";
+                statusEl.classList.replace('text-gray-500', 'text-green-500');
+                return;
+            } else if (Notification.permission === "denied") {
+                statusEl.textContent = "Notifications: Denied (Please change browser settings)";
+                statusEl.classList.replace('text-gray-500', 'text-red-500');
+                return;
+            }
+
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    statusEl.textContent = "Notifications: Active (Alarms are armed)";
+                    statusEl.classList.replace('text-gray-500', 'text-green-500');
+                } else {
+                    statusEl.textContent = "Notifications: Blocked";
+                    statusEl.classList.replace('text-gray-500', 'text-yellow-500');
+                }
+            });
+        }
+
+        function sendNotification(task) {
+            if (Notification.permission === "granted") {
+                new Notification("Kitchen Timer Alert!", {
+                    body: `🚨 ${task.name} (${task.groupId}) is DUE NOW! Get to the ${task.cooker}.`,
+                    icon: 'https://placehold.co/64x64/dc2626/ffffff?text=DUE',
+                    vibrate: [200, 100, 200]
+                });
+            }
+            showFeedback(`🚨 ALARM: ${task.name} is due!`, 'bg-red-700');
+        }
+
+        // --- View & Render Logic ---
+
+        function toggleView(mode) {
+            currentView = mode;
+            let title = 'Total Timeline';
+            if (mode === 'area') title = 'Cooker/Area View';
+            if (mode === 'summary') title = 'Printable Summary View';
+            
+            document.getElementById('currentViewTitle').textContent = title;
+            
+            // Update button styles (omitted for brevity, relying on standard UI)
+
+            renderTimelineView(mode);
+        }
+
+        function renderTimelineView(mode) {
+            const outputDiv = document.getElementById('timelineOutput');
+            
+            if (schedule.tasks.length === 0) {
+                outputDiv.innerHTML = '<p id="emptyMessage" class="text-center text-gray-500 dark:text-gray-400 italic">Add tasks above to see your synchronized cooking schedule!</p>';
+                return;
+            }
+
+            // Ensure tasks are sorted by start time for visual rendering
+            schedule.tasks.sort((a, b) => (a.startTime.getTime() - b.startTime.getTime()));
+
+            if (mode === 'timeline') {
+                renderTotalTimeline(outputDiv);
+            } else if (mode === 'area') {
+                renderAreaView(outputDiv);
+            } else if (mode === 'summary') {
+                renderSummaryView(outputDiv);
+            }
+        }
+
+        function renderTotalTimeline(outputDiv) {
+            const now = new Date();
+            const nextTask = schedule.tasks.find(t => t.startTime && t.startTime.getTime() > now.getTime());
+            const nextTaskId = nextTask ? nextTask.id : null;
+
+            let timelineHtml = `<div class="timeline-line hidden md:block"></div>`;
+            
+            schedule.tasks.forEach((task, index) => {
+                const isNext = task.id === nextTaskId && SCHEDULE_STATE === 'RUNNING';
+                timelineHtml += renderTaskItemHtml(task, index, isNext);
+            });
+
+            timelineHtml += renderReadyTimeMarker();
+            outputDiv.innerHTML = timelineHtml;
+        }
+
+        function renderAreaView(outputDiv) {
+            const tasksByCooker = schedule.tasks.reduce((acc, task) => {
+                const cooker = task.cooker;
+                if (!acc[cooker]) acc[cooker] = [];
+                acc[cooker].push(task);
+                return acc;
+            }, {});
+
+            let areaHtml = `<div class="space-y-6">`;
+            const sortedCookers = Object.keys(tasksByCooker).sort();
+            const now = new Date();
+            const nextTask = schedule.tasks.find(t => t.startTime && t.startTime.getTime() > now.getTime());
+            const nextTaskId = nextTask ? nextTask.id : null;
+
+            sortedCookers.forEach(cooker => {
+                const tasks = tasksByCooker[cooker].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+                const cookerColors = getCookerColor(cooker);
+
+                areaHtml += `
+                    <div class="p-4 rounded-xl shadow-md ${cookerColors.bg} border border-gray-200 dark:border-gray-700">
+                        <h3 class="text-xl font-bold ${cookerColors.text} mb-3 border-b border-dashed border-opacity-50 pb-2">
+                            ${cooker} Tasks
+                        </h3>
+                        <ul class="space-y-3">
+                            ${tasks.map(task => {
+                                const isNext = task.id === nextTaskId && SCHEDULE_STATE === 'RUNNING';
+                                const itemClass = isNext 
+                                    ? 'bg-red-50 dark:bg-red-900 ring-2 ring-red-500 shadow-lg' 
+                                    : 'bg-white dark:bg-gray-700 shadow-sm';
+                                
+                                const groupColor = getColorHash(task.groupId);
+                                const ringStyle = `border-left: 6px solid #${groupColor};`;
+
+                                return `
+                                    <li class="p-3 rounded-lg flex justify-between items-start transition duration-150 ${itemClass}" style="${ringStyle}">
+                                        <div class="flex-1">
+                                            <p class="text-sm font-semibold text-red-500 dark:text-red-400">START: ${formatTime(task.startTime)} ${isNext ? '✨ NEXT' : ''}</p>
+                                            <p class="text-lg font-bold text-gray-800 dark:text-gray-200">${task.name}</p>
+                                            ${task.notes ? `<p class="text-sm italic text-gray-600 dark:text-gray-400 mt-1">Note: ${task.notes}</p>` : ''}
+                                            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                                ${task.durationInMinutes} mins 
+                                                <span class="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
+                                                    ${task.groupId} (Step ${task.step})
+                                                </span>
+                                            </p>
+                                        </div>
+                                        <button onclick="removeTask(${task.id})" class="flex-shrink-0 p-1 text-gray-400 hover:text-red-600 transition dark:hover:text-red-400 ml-4 print-hide">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 112 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
+                                        </button>
+                                    </li>
+                                `;
+                            }).join('')}
+                        </ul>
+                    </div>
+                `;
+            });
+
+            areaHtml += `</div> ${renderReadyTimeMarker()}`; 
+            outputDiv.innerHTML = areaHtml;
+        }
+
+        function renderSummaryView(outputDiv) {
+            const sortedTasks = [...schedule.tasks].sort((a, b) => (a.startTime.getTime() - b.startTime.getTime()));
+
+            let summaryHtml = `
+                <div class="p-4 bg-red-100 dark:bg-red-900 rounded-xl shadow-inner border border-red-200 dark:border-red-700 mb-6 print-text-black">
+                    <h3 class="text-2xl font-black text-red-600 dark:text-red-400 text-center mb-2">
+                        MEAL READY TIME: ${formatTime(schedule.targetReadyTime)}
+                    </h3>
+                    <p class="text-center text-sm text-gray-600 dark:text-gray-300">
+                        Chronological Schedule (Printable View)
+                    </p>
+                </div>
+                <div class="space-y-4">
+            `;
+
+            sortedTasks.forEach((task) => {
+                const startTime = formatTime(task.startTime);
+                const cookerColors = getCookerColor(task.cooker);
+                const groupColor = getColorHash(task.groupId);
+                
+                summaryHtml += `
+                    <div class="p-4 rounded-lg group-ring shadow-sm print-text-black bg-gray-50 dark:bg-gray-700" style="border-left-color: #${groupColor};">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-lg font-black text-red-600 dark:text-red-400 print-text-black">${startTime}</p>
+                                <p class="text-xl font-bold text-gray-800 dark:text-gray-100 print-text-black">${task.name}</p>
+                                ${task.notes ? `<p class="text-sm italic text-gray-600 dark:text-gray-400 mt-1 print-text-black">Note: ${task.notes}</p>` : ''}
+                            </div>
+                            <div class="flex-shrink-0 text-right ml-4">
+                                <span class="text-sm font-semibold px-2 py-0.5 rounded-full ${cookerColors.text} ${cookerColors.bg.replace(/100|900/g, '200 dark:700')} print-text-black">
+                                    ${task.cooker}
+                                </span>
+                                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 print-text-black">${task.durationInMinutes} mins</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 print-text-black">${task.groupId} (Step ${task.step})</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            summaryHtml += '</div>';
+            outputDiv.innerHTML = summaryHtml;
+        }
+
+        function renderTaskItemHtml(task, index, isNext) {
+            const startTime = formatTime(task.startTime);
+            const colors = getCookerColor(task.cooker); 
+            const groupColor = getColorHash(task.groupId);
+
+            const isSimultaneous = schedule.tasks.filter(t => t.groupId === task.groupId && t.step === task.step && t.id !== task.id).length > 0;
+            const tagColor = isSimultaneous 
+                ? 'bg-fuchsia-200 text-fuchsia-800 dark:bg-fuchsia-700 dark:text-fuchsia-100' 
+                : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+
+            const groupDisplay = task.groupId ? `
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full mr-2 ${tagColor}" title="${isSimultaneous ? 'Simultaneous' : 'Sequential'} step in the sequence">
+                    ${task.groupId} (Step ${task.step})
+                </span>
+            ` : '';
+            
+            const notesDisplay = task.notes ? `
+                <p class="text-sm italic text-gray-600 dark:text-gray-400 mt-1 break-words">
+                    Note: ${task.notes}
+                </p>
+            ` : '';
+
+            const isFirst = index === 0;
+            const isLast = index === schedule.tasks.length - 1;
+            const upButtonClass = isFirst ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-blue-500 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-100';
+            const downButtonClass = isLast ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-blue-500 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-100';
+
+            // Highlight the next task
+            const nextTaskClass = isNext 
+                ? 'bg-red-50 dark:bg-red-900 ring-2 ring-red-500 shadow-xl' 
+                : `${colors.bg} shadow-sm`;
+
+            // Style for group ring
+            const ringStyle = `border-left-color: #${groupColor};`;
+
+            return `
+                <div class="timeline-item-container relative py-4 border-gray-200 dark:border-gray-700 md:border-b md:border-dashed md:border-gray-700 md:pl-0">
+                    <div class="flex items-start ${nextTaskClass} p-3 rounded-lg transition duration-150 hover:shadow-md md:ml-6 ml-4 group-ring" style="${ringStyle}">
+                        
+                        <!-- Left side: Reorder Controls -->
+                        <div class="flex flex-col space-y-1 mr-4 pt-1 flex-shrink-0 print-hide">
+                            <button onclick="moveTask(${index}, -1, true)" ${isFirst ? 'disabled' : ''} 
+                                    class="w-6 h-6 p-0.5 rounded-full bg-white dark:bg-gray-700 shadow-sm ${upButtonClass} transition duration-150 disabled:opacity-50 disabled:pointer-events-none"
+                                    title="Move up">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-full h-full">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+                                </svg>
+                            </button>
+                            <button onclick="moveTask(${index}, 1, true)" ${isLast ? 'disabled' : ''} 
+                                    class="w-6 h-6 p-0.5 rounded-full bg-white dark:bg-gray-700 shadow-sm ${downButtonClass} transition duration-150 disabled:opacity-50 disabled:pointer-events-none"
+                                    title="Move down">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-full h-full">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- Center: Start Time & Name -->
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-medium text-red-500 mb-1 md:text-base md:font-semibold">
+                                START: ${startTime} ${isNext ? '✨ NEXT ACTION' : ''}
+                            </p>
+                            <p class="text-lg font-bold ${isNext ? 'text-red-700 dark:text-red-300' : colors.text} break-words flex-1">${task.name}</p>
+                            
+                            ${notesDisplay}
+
+                            <div class="flex flex-wrap items-center mt-1">
+                                ${groupDisplay}
+                                <span class="text-xs font-mono bg-gray-200 dark:bg-gray-700 ${colors.text} px-2 py-0.5 rounded-full shadow-inner mt-1 sm:mt-0">${task.cooker}</span>
+                            </div>
+                            <p class="text-sm ${isNext ? 'text-red-700 dark:text-red-300' : colors.text} mt-1">${task.durationInMinutes} mins duration</p>
+                        </div>
+                        
+                        <!-- Right side: Delete Button -->
+                        <button onclick="removeTask(${task.id})" class="ml-4 p-1 text-gray-400 hover:text-red-600 transition dark:hover:text-red-400 flex-shrink-0 print-hide">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 112 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderReadyTimeMarker() {
+            const readyTimeDisplay = formatTime(schedule.targetReadyTime);
+            return `
+                <div id="ready-time-marker" class="relative py-4 text-center md:text-left print-text-black">
+                    <div class="w-6 h-6 bg-red-600 rounded-full border-4 border-red-300 inline-block md:absolute md:top-6 md:transform-none md:left-1.5 md:m-0"></div>
+                    <div class="md:ml-6 mt-2 md:mt-0 inline-block">
+                        <p class="text-xl font-black text-red-600 tracking-wide">
+                            MEAL READY: ${readyTimeDisplay}
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- Persistence and Data Functions (Simplified) ---
+        
+        function removeTask(id) {
+            schedule.tasks = schedule.tasks.filter(task => task.id !== id);
+            calculateAndRender(true); 
+        }
+
+        function moveTask(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex >= 0 && newIndex < schedule.tasks.length) {
+                [schedule.tasks[index], schedule.tasks[newIndex]] = [schedule.tasks[newIndex], schedule.tasks[index]];
+                calculateAndRender(true); 
+            }
+        }
+        
+        function serializeTasks() {
+            try {
+                const dataToStore = {
+                    readyTime: document.getElementById('targetReadyTime').value,
+                    prepBuffer: document.getElementById('prepBufferInput').value,
+                    tasks: schedule.tasks.map(t => ({
+                        name: t.name, duration: t.durationInMinutes, cooker: t.cooker,
+                        groupId: t.groupId, step: t.step, notes: t.notes 
+                    }))
+                };
+                return btoa(JSON.stringify(dataToStore));
+            } catch (e) {
+                console.error("Error serializing tasks:", e);
+                return '';
+            }
+        }
+
+        function deserializeTasks(base64String) {
+            try {
+                const jsonString = atob(base64String);
+                const data = JSON.parse(jsonString);
+
+                if (data && data.tasks && data.readyTime) {
+                    document.getElementById('targetReadyTime').value = data.readyTime;
+                    document.getElementById('prepBufferInput').value = data.prepBuffer || 0;
+                    
+                    schedule.tasks = data.tasks.map(t => ({
+                        id: Date.now() + Math.random(),
+                        name: t.name,
+                        durationInMinutes: t.duration,
+                        cooker: t.cooker,
+                        groupId: t.groupId || null,
+                        step: parseInt(t.step || 1, 10),
+                        notes: t.notes || '', 
+                        startTime: null
+                    }));
+                    return true;
+                }
+            } catch (e) {
+                console.error("Error deserializing tasks from URL/Storage:", e);
+            }
+            return false;
+        }
+
+        function addTemplatedTask({ name, durationInMinutes, cooker, groupId, step, notes }) {
+            schedule.tasks.push({
+                id: Date.now() + Math.random(),
+                name: name,
+                durationInMinutes: durationInMinutes,
+                cooker: cooker,
+                groupId: groupId, 
+                step: step,
+                notes: notes,
+                startTime: null
+            });
+        }
+        
+        function addRoastTemplate() {
+            const groupName = "Roast Chicken/Meat";
+            const tasksToAdd = [
+                { name: "Prep & Season", durationInMinutes: 10, cooker: "Prep Area", groupId: groupName, step: 1, notes: "Rub with butter and salt." },
+                { name: "Main Cook", durationInMinutes: 90, cooker: "Oven", groupId: groupName, step: 2, notes: "Set oven to 400°F (200°C)." },
+                { name: "Rest Meat (Crucial!)", durationInMinutes: 15, cooker: "Prep Area", groupId: groupName, step: 3, notes: "Cover loosely with foil." },
+                { name: "Sauté Green Veg", durationInMinutes: 8, cooker: "Hob/Stove", groupId: "Side Veg", step: 1, notes: "Cook fast over high heat." },
+            ];
+            tasksToAdd.forEach(t => addTemplatedTask(t));
+            document.getElementById('prepBufferInput').value = 10;
+            calculateAndRender(true);
+            showFeedback(`🍗 Added roast template with a 10 min Prep Buffer!`, 'bg-red-600');
+        }
+
+        function saveSchedule() {
+            const data = serializeTasks();
+            if (data) localStorage.setItem(STORAGE_KEY, data);
+        }
+        
+        function loadFromStorage() {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (savedData) return deserializeTasks(savedData);
+            return false;
+        }
+
+        function resetSchedule() {
+            schedule.tasks = [];
+            SCHEDULE_STATE = 'IDLE';
+            clearInterval(timerInterval);
+            localStorage.removeItem(STORAGE_KEY);
+            
+            // Reset fields
+            document.getElementById('targetReadyTime').value = '19:00';
+            document.getElementById('prepBufferInput').value = 0;
+            document.getElementById('taskSequenceStep').value = 1;
+            document.getElementById('startButton').textContent = 'START SCHEDULE 🚀';
+            document.getElementById('startButton').classList.replace('bg-green-600', 'bg-red-600');
+            document.getElementById('startButton').classList.remove('animate-pulse');
+            
+            // Initial call to update empty state
+            calculateAndRender();
+            showFeedback("🗑️ Schedule and alarms reset!", 'bg-red-500');
+            requestNotificationPermission(); // Recheck status
+        }
+
+        function generateShareLink() {
+            const encodedData = serializeTasks();
+            const url = window.location.href.split('#')[0] + '#' + encodedData;
+            window.history.replaceState(null, null, url);
+        }
+
+        function copyShareLink() {
+            const encodedData = serializeTasks();
+            const link = window.location.href.split('#')[0] + '#' + encodedData;
+            if (!link || schedule.tasks.length === 0) {
+                showFeedback("❌ Cannot generate share link. No tasks in schedule.", 'bg-red-500');
+                return;
+            }
+            const tempInput = document.createElement('textarea');
+            tempInput.value = link;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            try {
+                document.execCommand('copy');
+                showFeedback("🔗 Share link copied to clipboard!", 'bg-blue-500');
+            } catch (err) {
+                showFeedback("❌ Failed to copy link.", 'bg-red-500');
+            }
+            document.body.removeChild(tempInput);
+            window.history.replaceState(null, null, link);
+        }
+
+        function loadFromUrl() {
+            const hash = window.location.hash.substring(1); 
+            if (hash) {
+                if (deserializeTasks(hash)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function showFeedback(message, bgColor) {
+            let feedback = document.getElementById('feedbackMessage');
+            
+            if (!feedback) {
+                feedback = document.createElement('div');
+                feedback.id = 'feedbackMessage';
+                feedback.className = 'fixed top-4 right-4 z-50 p-4 rounded-lg shadow-xl text-white transition-opacity duration-300 opacity-0 transform translate-y-4';
+                document.body.appendChild(feedback);
+            }
+            
+            clearTimeout(feedbackTimeout);
+            
+            feedback.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-xl text-white transition-opacity duration-300 transform translate-y-0 opacity-100 ${bgColor}`;
+            feedback.textContent = message;
+            
+            feedbackTimeout = setTimeout(() => {
+                feedback.classList.replace('opacity-100', 'opacity-0');
+                feedback.classList.replace('translate-y-0', 'translate-y-4');
+            }, 4000);
+        }
+
+        function toggleDarkMode() {
+            const isDark = document.body.classList.toggle('dark');
+            localStorage.setItem(DARK_MODE_KEY, isDark ? 'dark' : 'light');
+        }
+
+        function loadDarkModePreference() {
+            const savedPreference = localStorage.getItem(DARK_MODE_KEY);
+            if (savedPreference === 'dark' || (!savedPreference && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.body.classList.add('dark');
+            } else {
+                document.body.classList.remove('dark');
+            }
+        }
+
+        // --- Initialization ---
+
+        window.onload = function() {
+            loadDarkModePreference();
+            requestNotificationPermission(); // Check initial status
+            
+            let loadedSuccessfully = loadFromUrl() || loadFromStorage();
+            
+            if (!loadedSuccessfully) {
+                // Set default time to 7:00 PM if no data loaded
+                document.getElementById('targetReadyTime').value = '19:00'; 
+                addRoastTemplate(); // Load a sample template
+            }
+            
+            calculateAndRender();
+            toggleView('timeline'); 
+            startLiveTimer(); 
+        };
+    </script>
+</body>
+</html>
