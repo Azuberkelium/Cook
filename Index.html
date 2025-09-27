@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dinner Scheduler Timeline</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the timeline */
+        .timeline-container {
+            position: relative;
+        }
+        .timeline-line {
+            /* The vertical line */
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background-color: #3b82f6; /* blue-500 */
+            transform: translateX(-50%);
+        }
+
+        /* Responsive timeline positioning for desktop */
+        @media (min-width: 768px) {
+            .timeline-line {
+                left: 1rem; /* Adjust position for the desktop view */
+            }
+            .timeline-item-container {
+                padding-left: 3rem; /* Push content away from the line */
+            }
+            .timeline-item-container:before {
+                /* Dot on the timeline */
+                content: '';
+                position: absolute;
+                width: 1rem;
+                height: 1rem;
+                background-color: #f87171; /* red-400 */
+                border: 3px solid #3b82f6; /* blue-500 */
+                border-radius: 50%;
+                left: 1rem;
+                top: 1.5rem;
+                transform: translate(-50%, -50%);
+                z-index: 10;
+            }
+            /* Styling for the final ready time */
+            #ready-time-marker {
+                left: 1rem;
+                transform: translateX(-50%);
+            }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans p-4">
+
+    <div id="app" class="max-w-4xl mx-auto">
+        <header class="text-center py-6">
+            <h1 class="text-4xl font-extrabold text-blue-800 tracking-tight">The Equalizer Kitchen Timer</h1>
+            <p class="mt-2 text-gray-600">Plan your meal to be ready at the exact same time.</p>
+        </header>
+
+        <!-- Configuration & Input Panel -->
+        <section class="bg-white p-6 rounded-xl shadow-lg mb-8 border border-gray-200">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">1. Set Ready Time & Add Task</h2>
+
+            <div class="md:flex md:space-x-4 mb-4">
+                <!-- Target Ready Time Input -->
+                <div class="flex-1 mb-4 md:mb-0">
+                    <label for="targetReadyTime" class="block text-sm font-medium text-gray-700 mb-1">Target Ready Time</label>
+                    <input type="time" id="targetReadyTime" required
+                        value="19:00" onchange="calculateAndRender()"
+                        class="w-full px-4 py-2 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg shadow-sm">
+                </div>
+            </div>
+
+            <!-- Task Input Form - Now 4 columns on desktop -->
+            <div id="addTaskForm" class="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+                <div class="col-span-2 sm:col-span-1">
+                    <label for="taskName" class="block text-sm font-medium text-gray-700 mb-1">Task Name</label>
+                    <input type="text" id="taskName" placeholder="E.g., Chop Veg or Bake Cake"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm" required>
+                </div>
+                <!-- Cooker/Location Input -->
+                <div class="col-span-2 sm:col-span-1">
+                    <label for="taskCooker" class="block text-sm font-medium text-gray-700 mb-1">Cooker/Location</label>
+                    <input type="text" id="taskCooker" placeholder="E.g., Oven, Hob, Prep" value="Oven"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm" required>
+                </div>
+                <div class="col-span-1 sm:col-span-1">
+                    <label for="taskDuration" class="block text-sm font-medium text-gray-700 mb-1">Duration (mins)</label>
+                    <input type="number" id="taskDuration" placeholder="E.g., 45" min="1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm" required>
+                </div>
+                <div class="col-span-1 sm:col-span-1">
+                    <button onclick="addTask()"
+                        class="w-full py-2 px-4 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition duration-150">
+                        Add Task
+                    </button>
+                </div>
+            </div>
+            
+            <!-- NEW: Persistence & Sharing Controls -->
+            <div class="flex flex-wrap gap-3 mt-6 border-t pt-4 border-gray-100">
+                <button onclick="saveSchedule()"
+                    class="flex-1 py-2 px-4 bg-yellow-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-150">
+                    💾 Save to Local Storage
+                </button>
+                <button onclick="loadSchedule()"
+                    class="flex-1 py-2 px-4 bg-purple-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-purple-600 transition duration-150">
+                    🔄 Load Saved Schedule
+                </button>
+                <button onclick="resetSchedule()"
+                    class="flex-1 py-2 px-4 bg-red-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-150">
+                    🗑️ Reset All Tasks
+                </button>
+            </div>
+            
+            <!-- Share Link Display -->
+            <div id="shareLinkContainer" class="mt-4 p-3 bg-gray-100 rounded-lg border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm font-medium text-gray-700">Shareable Link:</p>
+                    <button onclick="copyShareLink()" id="copyButton"
+                        class="py-1 px-3 bg-blue-500 text-white text-xs font-semibold rounded-md shadow-sm hover:bg-blue-600 transition duration-150">
+                        Copy Link
+                    </button>
+                </div>
+                <p id="shareLinkDisplay" class="text-xs font-mono text-blue-700 mt-2 break-all cursor-pointer" onclick="copyShareLink()">
+                    <!-- Link will be generated here -->
+                </p>
+            </div>
+            
+        </section>
+
+        <!-- Timeline Display Area -->
+        <section class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+            <h2 class="text-2xl font-semibold mb-6 text-gray-700">2. Calculated Timeline</h2>
+            
+            <div id="timelineOutput" class="timeline-container pb-8 md:p-4">
+                <p id="emptyMessage" class="text-center text-gray-500 italic">Add tasks above to see your synchronized cooking schedule!</p>
+                <!-- Timeline content will be rendered here -->
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Global state for tasks
+        let schedule = {
+            targetReadyTime: null,
+            tasks: []
+        };
+        
+        // Key for localStorage
+        const STORAGE_KEY = 'equalizerKitchenSchedule';
+
+        // --- Utility Functions ---
+
+        /**
+         * Formats a Date object to HH:MM AM/PM string.
+         */
+        function formatTime(date) {
+            if (!date || isNaN(date.getTime())) return 'N/A';
+            return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        }
+        
+        /**
+         * Returns Tailwind CSS classes for background and text based on the cooker name.
+         */
+        function getCookerColor(cooker) {
+            const normalizedCooker = cooker.toLowerCase().trim();
+            
+            // Air Fryer (Yellow/Crispy)
+            if (normalizedCooker.includes('air fryer') || normalizedCooker.includes('airfryer')) {
+                return { bg: 'bg-yellow-100', text: 'text-yellow-800' };
+            }
+            // Pressure Cooker (Cyan/Steam)
+            if (normalizedCooker.includes('pressure cooker') || normalizedCooker.includes('instant pot')) {
+                return { bg: 'bg-cyan-100', text: 'text-cyan-800' };
+            }
+            // Oven (Amber/Roasting)
+            if (normalizedCooker.includes('oven')) {
+                // Amber/Orange for Oven
+                return { bg: 'bg-amber-100', text: 'text-amber-800' };
+            }
+            // Prep Area (Lime/Preparation)
+            if (normalizedCooker.includes('prep') || normalizedCooker.includes('area') || normalizedCooker.includes('table')) {
+                // Lime/Green for Prep
+                return { bg: 'bg-lime-100', text: 'text-lime-800' };
+            }
+            // Hob/Stove (Red/Direct Heat)
+            if (normalizedCooker.includes('hob') || normalizedCooker.includes('stove')) {
+                // Red/Pink for Hob/Stove
+                return { bg: 'bg-red-100', text: 'text-red-800' };
+            }
+            // Grill/Broil (Pink/High Direct Heat)
+            if (normalizedCooker.includes('grill') || normalizedCooker.includes('broil')) {
+                // Pink for Grilling
+                return { bg: 'bg-pink-100', text: 'text-pink-800' };
+            }
+            
+            // Default/General
+            return { bg: 'bg-blue-100', text: 'text-blue-800' };
+        }
+
+
+        // --- Persistence & Sharing Functions ---
+
+        /**
+         * Serializes the current tasks and target time into a URL-safe Base64 string.
+         */
+        function serializeTasks() {
+            try {
+                const dataToStore = {
+                    readyTime: document.getElementById('targetReadyTime').value,
+                    tasks: schedule.tasks.map(t => ({
+                        name: t.name,
+                        duration: t.durationInMinutes,
+                        cooker: t.cooker
+                    }))
+                };
+                const jsonString = JSON.stringify(dataToStore);
+                return btoa(jsonString);
+            } catch (e) {
+                console.error("Error serializing tasks:", e);
+                return '';
+            }
+        }
+
+        /**
+         * Deserializes tasks from a Base64 string and updates the schedule.
+         */
+        function deserializeTasks(base64String) {
+            try {
+                const jsonString = atob(base64String);
+                const data = JSON.parse(jsonString);
+
+                if (data && data.tasks && data.readyTime) {
+                    document.getElementById('targetReadyTime').value = data.readyTime;
+                    
+                    schedule.tasks = data.tasks.map(t => ({
+                        id: Date.now() + Math.random(), // Assign a new temporary ID
+                        name: t.name,
+                        durationInMinutes: t.duration,
+                        cooker: t.cooker,
+                        startTime: null
+                    }));
+                    return true;
+                }
+            } catch (e) {
+                console.error("Error deserializing tasks from URL/Storage:", e);
+            }
+            return false;
+        }
+
+        /**
+         * Saves the current schedule to localStorage.
+         */
+        function saveSchedule() {
+            const data = serializeTasks();
+            if (data) {
+                localStorage.setItem(STORAGE_KEY, data);
+                // Custom confirmation box instead of alert()
+                showFeedback("✅ Schedule saved successfully to your browser!", 'bg-green-500');
+            }
+        }
+
+        /**
+         * Loads the schedule from localStorage.
+         */
+        function loadSchedule() {
+            const data = localStorage.getItem(STORAGE_KEY);
+            if (data && deserializeTasks(data)) {
+                calculateAndRender();
+                showFeedback("✅ Schedule loaded from local storage!", 'bg-green-500');
+            } else {
+                showFeedback("⚠️ No saved schedule found in your browser.", 'bg-red-500');
+            }
+        }
+
+        /**
+         * Clears all tasks and clears localStorage.
+         */
+        function resetSchedule() {
+            schedule.tasks = [];
+            localStorage.removeItem(STORAGE_KEY);
+            // Reset time to default
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + 30);
+            document.getElementById('targetReadyTime').value = 
+                `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                
+            calculateAndRender();
+            showFeedback("🗑️ Schedule and local save cleared!", 'bg-red-500');
+        }
+
+        /**
+         * Generates and displays the shareable URL link.
+         */
+        function generateShareLink() {
+            const encodedData = serializeTasks();
+            const url = window.location.href.split('#')[0] + '#' + encodedData;
+            document.getElementById('shareLinkDisplay').textContent = url;
+            // Also update window history so the URL is current
+            window.history.replaceState(null, null, url);
+        }
+        
+        /**
+         * Copies the generated link to the clipboard.
+         */
+        function copyShareLink() {
+            const link = document.getElementById('shareLinkDisplay').textContent;
+            if (!link || link.length < 5) return; // Ignore if link is empty
+            
+            // Fallback for secure context copy
+            const tempInput = document.createElement('textarea');
+            tempInput.value = link;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            try {
+                document.execCommand('copy');
+                showFeedback("🔗 Link copied to clipboard!", 'bg-blue-500');
+            } catch (err) {
+                console.error('Could not copy text: ', err);
+                showFeedback("❌ Failed to copy link. Try selecting manually.", 'bg-red-500');
+            }
+            document.body.removeChild(tempInput);
+        }
+        
+        /**
+         * Checks the URL hash for schedule data and loads it.
+         */
+        function loadFromUrl() {
+            const hash = window.location.hash.substring(1); // Remove '#'
+            if (hash) {
+                if (deserializeTasks(hash)) {
+                    // Success is handled by the caller (window.onload)
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        // --- Feedback Message UI (Replaces alert()) ---
+        let feedbackTimeout;
+        function showFeedback(message, bgColor) {
+            const container = document.getElementById('app');
+            let feedback = document.getElementById('feedbackMessage');
+            
+            if (!feedback) {
+                feedback = document.createElement('div');
+                feedback.id = 'feedbackMessage';
+                feedback.className = 'fixed top-4 right-4 z-50 p-4 rounded-lg shadow-xl text-white transition-opacity duration-300 opacity-0 transform translate-y-4';
+                container.appendChild(feedback);
+            }
+            
+            clearTimeout(feedbackTimeout);
+            
+            feedback.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-xl text-white transition-opacity duration-300 transform translate-y-0 opacity-100 ${bgColor}`;
+            feedback.textContent = message;
+            
+            feedbackTimeout = setTimeout(() => {
+                feedback.classList.replace('opacity-100', 'opacity-0');
+                feedback.classList.replace('translate-y-0', 'translate-y-4');
+            }, 3000);
+        }
+
+        // --- Core Logic ---
+
+        /**
+         * Calculates the start time for all tasks based on the target ready time.
+         * Sorts tasks by their required start time (earliest first).
+         */
+        function calculateAndRender() {
+            const targetTimeInput = document.getElementById('targetReadyTime').value;
+            if (!targetTimeInput) {
+                renderTimeline(); // Render empty state if no time is set
+                generateShareLink(); // Update share link
+                return;
+            }
+
+            // Get today's date and combine with the time input (HH:MM)
+            const [hours, minutes] = targetTimeInput.split(':').map(Number);
+            const targetDate = new Date();
+            // Set the target date/time for today
+            targetDate.setHours(hours, minutes, 0, 0);
+
+            // Update global state
+            schedule.targetReadyTime = targetDate;
+            
+            // 1. Calculate start times for all tasks
+            schedule.tasks.forEach(task => {
+                // Calculate start time: target time minus duration (in milliseconds)
+                const durationMs = task.durationInMinutes * 60 * 1000;
+                const startTimeMs = targetDate.getTime() - durationMs;
+                task.startTime = new Date(startTimeMs);
+            });
+
+            // 2. Sort tasks by their calculated startTime (earliest task at the top)
+            schedule.tasks.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+            // 3. Render the visual timeline
+            renderTimeline();
+            
+            // 4. Update the share link every time the state changes
+            generateShareLink();
+        }
+
+        /**
+         * Adds a new task from the form input to the schedule.
+         */
+        function addTask() {
+            const nameInput = document.getElementById('taskName');
+            const durationInput = document.getElementById('taskDuration');
+            const cookerInput = document.getElementById('taskCooker');
+
+            const name = nameInput.value.trim();
+            const duration = parseInt(durationInput.value, 10);
+            const cooker = cookerInput.value.trim() || 'General';
+
+            if (name && duration > 0) {
+                schedule.tasks.push({
+                    id: Date.now(), // Simple unique ID
+                    name: name,
+                    durationInMinutes: duration,
+                    cooker: cooker,
+                    startTime: null
+                });
+
+                // Clear name and duration inputs, but keep the cooker/location value
+                nameInput.value = '';
+                durationInput.value = '';
+                
+                // Recalculate and render the new schedule
+                calculateAndRender();
+
+            } else {
+                showFeedback("❌ Please enter a valid task name and duration (minimum 1 minute).", 'bg-red-500');
+            }
+        }
+
+        /**
+         * Removes a task from the schedule by its ID.
+         */
+        function removeTask(id) {
+            schedule.tasks = schedule.tasks.filter(task => task.id !== id);
+            calculateAndRender();
+        }
+
+        /**
+         * Renders the dynamic HTML for the timeline.
+         */
+        function renderTimeline() {
+            const outputDiv = document.getElementById('timelineOutput');
+            
+            if (schedule.tasks.length === 0) {
+                outputDiv.innerHTML = '<p id="emptyMessage" class="text-center text-gray-500 italic">Add tasks above to see your synchronized cooking schedule!</p>';
+                return;
+            }
+
+            // Start HTML generation with the blue timeline line
+            let timelineHtml = `<div class="timeline-line hidden md:block"></div>`;
+            
+            // Render each task item
+            schedule.tasks.forEach(task => {
+                const startTime = formatTime(task.startTime);
+                const colors = getCookerColor(task.cooker); // Get colors here
+
+                timelineHtml += `
+                    <div class="timeline-item-container relative py-4 border-l-4 md:border-l-0 border-gray-200 md:border-b md:border-dashed md:border-gray-200 md:pl-0">
+                        <!-- Time Marker (for mobile, acts as the dot and time) -->
+                        <div class="absolute -left-1 top-4 w-4 h-4 bg-red-400 rounded-full border-2 border-blue-500 md:hidden"></div>
+                        
+                        <div class="${colors.bg} p-3 rounded-lg shadow-sm transition duration-150 hover:shadow-md md:ml-6 ml-4">
+                            <div class="flex justify-between items-start">
+                                <!-- Start Time & Name -->
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-red-500 mb-1 md:text-base md:font-semibold">
+                                        <span class="md:hidden">${startTime} &bull;</span> START: ${startTime}
+                                    </p>
+                                    <div class="flex flex-col sm:flex-row items-baseline justify-between sm:justify-start sm:space-x-3">
+                                        <p class="text-lg font-bold ${colors.text} break-words">${task.name}</p>
+                                        <!-- Display Cooker/Location -->
+                                        <span class="text-xs font-mono bg-gray-200 ${colors.text} px-2 py-0.5 rounded-full shadow-inner mt-1 sm:mt-0">${task.cooker}</span>
+                                    </div>
+                                    <p class="text-sm ${colors.text} mt-1">${task.durationInMinutes} mins duration</p>
+                                </div>
+                                
+                                <!-- Delete Button -->
+                                <button onclick="removeTask(${task.id})" class="ml-4 p-1 text-gray-400 hover:text-red-600 transition">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 112 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Add the final ready time marker at the end
+            const readyTimeDisplay = formatTime(schedule.targetReadyTime);
+            timelineHtml += `
+                <div id="ready-time-marker" class="relative py-4 text-center md:text-left">
+                    <div class="w-6 h-6 bg-red-600 rounded-full border-4 border-red-300 inline-block md:absolute md:top-6 md:transform-none md:left-1.5 md:m-0"></div>
+                    <div class="md:ml-6 mt-2 md:mt-0 inline-block">
+                        <p class="text-xl font-black text-red-600 tracking-wide">
+                            ALL READY: ${readyTimeDisplay}
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            outputDiv.innerHTML = timelineHtml;
+        }
+        
+        // --- Initialization ---
+        
+        // Example initial tasks with cooker/location defined
+        const DEFAULT_TASKS = [
+            { id: 1, name: "Roast Potatoes", durationInMinutes: 60, cooker: "Oven 1", startTime: null },
+            { id: 7, name: "Crispy Brussels Sprouts", durationInMinutes: 20, cooker: "Air Fryer", startTime: null },
+            { id: 8, name: "Pressure Cooker Rice", durationInMinutes: 15, cooker: "Instant Pot", startTime: null },
+            { id: 3, name: "Steaks (Sear & Rest)", durationInMinutes: 15, cooker: "Hob", startTime: null },
+            { id: 4, name: "Chop Salad Veg", durationInMinutes: 10, cooker: "Prep Area", startTime: null },
+            { id: 6, name: "Set Table", durationInMinutes: 5, cooker: "Prep", startTime: null }
+        ];
+
+        // Run the calculation and initial render when the page loads
+        window.onload = function() {
+            let loadedSuccessfully = false;
+            
+            // 1. Check if schedule is embedded in the URL (highest priority)
+            loadedSuccessfully = loadFromUrl();
+
+            if (!loadedSuccessfully) {
+                // 2. Try loading from local storage
+                const savedData = localStorage.getItem(STORAGE_KEY);
+                if (savedData) {
+                    loadedSuccessfully = deserializeTasks(savedData);
+                }
+            }
+            
+            if (!loadedSuccessfully) {
+                // 3. Fallback to default tasks
+                schedule.tasks = DEFAULT_TASKS;
+                
+                // Set default time to current time + 30 minutes for convenience
+                const now = new Date();
+                now.setMinutes(now.getMinutes() + 30);
+                const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                document.getElementById('targetReadyTime').value = defaultTime;
+            }
+            
+            // Final calculation and render
+            calculateAndRender();
+        };
+
+    </script>
+</body>
+</html>
